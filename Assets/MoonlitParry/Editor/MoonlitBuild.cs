@@ -14,8 +14,9 @@ namespace MoonlitParry.EditorTools
     /// One-click Windows build + zip (to share the game), and a zip of the project source.
     /// Menu: Moonlit Parry ▸ Build Windows (zip) / Pack Source (zip).
     /// The same jobs also start when a file Assets/MoonlitParry/Captures~/build.txt appears (contents "windows",
-    /// "source" or both) so they can be triggered from outside the editor. Results go to Captures~ (ignored by Unity):
-    /// MoonlitParry_Windows.zip, MoonlitParry_Source.zip and build_log.txt.
+    /// "source", "shortcut" or several) so they can be triggered from outside the editor. Results go to Captures~
+    /// (ignored by Unity): LordOfAlenna_Demo_Windows.zip, MoonlitParry_Source.zip and build_log.txt.
+    /// "shortcut" checks the desktop-shortcut code: once from the editor and once inside the built player (headless).
     /// </summary>
     [InitializeOnLoad]
     public static class MoonlitBuild
@@ -23,6 +24,9 @@ namespace MoonlitParry.EditorTools
         static double next;
 
         static string ProjectRoot { get { return Path.GetDirectoryName(Application.dataPath); } }
+        static string GameFolder { get { return Path.Combine(ProjectRoot, "Builds/LordOfAlenna_Windows/" + Branding.ProductName); } }
+        static string GameExe { get { return Path.Combine(GameFolder, Branding.ProductName + ".exe"); } }
+        const string ZipName = "LordOfAlenna_Demo_Windows.zip";
         static string Cap { get { return Path.Combine(Application.dataPath, "MoonlitParry/Captures~"); } }
 
         static MoonlitBuild()
@@ -42,8 +46,9 @@ namespace MoonlitParry.EditorTools
             catch { return; }
             EditorApplication.delayCall += () =>
             {
-                if (what.Contains("source")) PackSource();
                 if (what.Contains("windows") || what.Length == 0) BuildWindows();
+                if (what.Contains("source")) PackSource();
+                if (what.Contains("shortcut")) TestShortcut();
             };
         }
 
@@ -63,7 +68,8 @@ namespace MoonlitParry.EditorTools
         {
             try
             {
-                string outDir = Path.Combine(ProjectRoot, "Builds/MoonlitParry_Windows");
+                Branding.Apply(false);
+                string outDir = GameFolder;
                 if (Directory.Exists(outDir)) Directory.Delete(outDir, true);
                 Directory.CreateDirectory(outDir);
                 var scenes = new List<string>();
@@ -74,7 +80,7 @@ namespace MoonlitParry.EditorTools
                 var opts = new BuildPlayerOptions
                 {
                     scenes = scenes.ToArray(),
-                    locationPathName = Path.Combine(outDir, "MoonlitParry.exe"),
+                    locationPathName = GameExe,
                     target = BuildTarget.StandaloneWindows64,
                     targetGroup = BuildTargetGroup.Standalone,
                     options = BuildOptions.None
@@ -84,11 +90,17 @@ namespace MoonlitParry.EditorTools
                 Log("build " + sum.result + "  size " + sum.totalSize + "  errors " + sum.totalErrors + "  time " + sum.totalTime);
                 if (sum.result != BuildResult.Succeeded) return;
                 foreach (var d in Directory.GetDirectories(outDir, "*DoNotShip*")) Directory.Delete(d, true);
-                File.WriteAllText(Path.Combine(outDir, "README.txt"),
-                    "Moonlit Parry - demo\r\n\r\nChay MoonlitParry.exe.\r\n\r\nDieu khien: A/D di chuyen, Space nhay, chuot trai chem, chuot phai parry,\r\n" +
-                    "Shift lon, 1 binh mau, F ket lieu, R nghi o lua trai / thu lai, Esc tam dung.\r\n");
-                string zip = Path.Combine(Cap, "MoonlitParry_Windows.zip");
-                Log(Zip(outDir, zip) ? "zip ok " + zip + " (" + new FileInfo(zip).Length + " bytes)" : "zip FAILED (folder: " + outDir + ")");
+                string n = Branding.ProductName;
+                File.WriteAllText(Path.Combine(outDir, "README.txt"),         // ASCII name: zip tools mangle accented names
+                    n + "\r\n\r\n" +
+                    "Mở \"" + n + ".exe\" để chơi. Lần đầu mở, game tự tạo lối tắt \"" + n + "\" ngoài Desktop,\r\n" +
+                    "lần sau bấm vào lối tắt đó là vào game.\r\n" +
+                    "Nếu Windows hiện \"Windows protected your PC\": bấm \"More info\" rồi \"Run anyway\".\r\n\r\n" +
+                    "Điều khiển: A/D di chuyển, Space nhảy, chuột trái chém, chuột phải parry, Shift lộn né,\r\n" +
+                    "1 uống bình máu, F kết liễu, R nghỉ ở lửa trại / thử lại, Esc hoặc P tạm dừng.\r\n",
+                    new UTF8Encoding(true));
+                string zip = Path.Combine(Cap, ZipName);
+                Log(Zip(outDir, zip, true) ? "zip ok " + zip + " (" + new FileInfo(zip).Length + " bytes)" : "zip FAILED (folder: " + outDir + ")");
             }
             catch (Exception e) { Log("build EXCEPTION " + e); }
         }
@@ -104,7 +116,7 @@ namespace MoonlitParry.EditorTools
                 CopyDir(Path.Combine(ProjectRoot, "Packages"), Path.Combine(tmp, "Packages"));
                 CopyDir(Path.Combine(ProjectRoot, "ProjectSettings"), Path.Combine(tmp, "ProjectSettings"));
                 string zip = Path.Combine(Cap, "MoonlitParry_Source.zip");
-                Log(Zip(tmp, zip) ? "source zip ok (" + new FileInfo(zip).Length + " bytes)" : "source zip FAILED");
+                Log(Zip(tmp, zip, false) ? "source zip ok (" + new FileInfo(zip).Length + " bytes)" : "source zip FAILED");
                 Directory.Delete(tmp, true);
             }
             catch (Exception e) { Log("source EXCEPTION " + e); }
@@ -128,8 +140,40 @@ namespace MoonlitParry.EditorTools
             }
         }
 
-        /// <summary>ZipFile.CreateFromDirectory through reflection (keeps this script compiling on any API level).</summary>
-        static bool Zip(string dir, string zip)
+        /// <summary>
+        /// Shortcut check: writes a .lnk from the editor and reads it back through the shell, then (if a build exists)
+        /// runs the player headless with -mp-shortcut-test so it does the same from inside the game. All into
+        /// Captures~/shortcut_test; nothing touches the desktop or the game's saved settings.
+        /// </summary>
+        [MenuItem("Moonlit Parry/Test Desktop Shortcut", false, 103)]
+        public static void TestShortcut()
+        {
+            try
+            {
+                string dir = Path.Combine(Cap, "shortcut_test");
+                if (Directory.Exists(dir)) Directory.Delete(dir, true);
+                Directory.CreateDirectory(dir);
+                string target = File.Exists(GameExe) ? GameExe : EditorApplication.applicationPath;
+                string lnk = Path.Combine(dir, "editor.lnk");
+                string err = MoonlitParry.DesktopShortcut.Create(lnk, target, Path.GetDirectoryName(target), target, "editor test");
+                Log("shortcut editor: " + (err ?? "ok -> " + MoonlitParry.DesktopShortcut.Describe(lnk)));
+                if (!File.Exists(GameExe)) { Log("shortcut player: skipped (no build at " + GameExe + ")"); return; }
+                var psi = new System.Diagnostics.ProcessStartInfo(GameExe,
+                    "-batchmode -nographics -mp-shortcut-test \"" + dir + "\" -logFile \"" + Path.Combine(dir, "player.log") + "\"")
+                { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = GameFolder };
+                var proc = System.Diagnostics.Process.Start(psi);
+                bool exited = proc.WaitForExit(90000);
+                if (!exited) { try { proc.Kill(); } catch { } }
+                string res = Path.Combine(dir, "player_result.txt");
+                Log("shortcut player: " + (exited ? "exit " + proc.ExitCode : "timeout") + "\n" +
+                    (File.Exists(res) ? File.ReadAllText(res) : "(no player_result.txt)"));
+            }
+            catch (Exception e) { Log("shortcut EXCEPTION " + e); }
+        }
+
+        /// <summary>ZipFile.CreateFromDirectory through reflection (keeps this script compiling on any API level).
+        /// With <paramref name="withFolder"/> the zip holds the folder itself, so unzipping gives one tidy folder.</summary>
+        static bool Zip(string dir, string zip, bool withFolder)
         {
             try
             {
@@ -147,8 +191,23 @@ namespace MoonlitParry.EditorTools
                         if (t != null) break;
                     }
                 if (t == null) { Log("ZipFile type not found"); return false; }
-                var m = t.GetMethod("CreateFromDirectory", new[] { typeof(string), typeof(string) });
-                m.Invoke(null, new object[] { dir, zip });
+                MethodInfo four = null;
+                foreach (var mi in t.GetMethods(BindingFlags.Public | BindingFlags.Static))
+                {
+                    var ps = mi.GetParameters();
+                    if (mi.Name == "CreateFromDirectory" && ps.Length == 4 && ps[2].ParameterType.IsEnum && ps[3].ParameterType == typeof(bool))
+                    { four = mi; break; }
+                }
+                if (four != null)
+                {
+                    object level = Enum.Parse(four.GetParameters()[2].ParameterType, "Optimal");
+                    four.Invoke(null, new object[] { dir, zip, level, withFolder });
+                }
+                else
+                {
+                    if (withFolder) Log("zip: 4-argument CreateFromDirectory not found, zipping without the top folder");
+                    t.GetMethod("CreateFromDirectory", new[] { typeof(string), typeof(string) }).Invoke(null, new object[] { dir, zip });
+                }
                 return File.Exists(zip);
             }
             catch (Exception e) { Log("zip EXCEPTION " + e.Message); return false; }

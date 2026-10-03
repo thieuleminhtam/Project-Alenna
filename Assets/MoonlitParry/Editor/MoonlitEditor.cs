@@ -50,6 +50,20 @@ namespace MoonlitParry.EditorTools
         {
             string path = assetPath.Replace('\\', '/');
             if (path.Contains(HD)) { ImportHD(path); return; }
+            if (path.Contains("MoonlitParry/Branding/"))           // game icon: exact pixels, no compression or mips
+            {
+                var bi = (TextureImporter)assetImporter;
+                bi.textureType = TextureImporterType.Default;
+                bi.npotScale = TextureImporterNPOTScale.None;
+                bi.mipmapEnabled = false;
+                bi.filterMode = FilterMode.Point;
+                bi.textureCompression = TextureImporterCompression.Uncompressed;
+                bi.alphaIsTransparency = true;
+                bi.isReadable = true;
+                bi.maxTextureSize = 2048;
+                bi.wrapMode = TextureWrapMode.Clamp;
+                return;
+            }
             if (!path.Contains(Root)) return;
             var ti = (TextureImporter)assetImporter;
             ti.textureType = TextureImporterType.Sprite;

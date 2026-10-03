@@ -28,6 +28,7 @@ namespace MoonlitParry
         string centerText; float centerT;
         bool death, end; float deathT, endT;
         string bannerText; Color bannerCol; float bannerT = 99f;
+        string toastText; float toastT = 99f;
 
         void Awake()
         {
@@ -53,6 +54,8 @@ namespace MoonlitParry
         public void HideDeath() { death = false; }
         public void ShowEnd() { end = true; endT = 0f; }
         public void Banner(string text, Color c) { bannerText = text; bannerCol = c; bannerT = 0f; }
+        /// <summary>Small one-off notice in the bottom-right corner (e.g. the desktop shortcut was created).</summary>
+        public void Toast(string text) { toastText = text; toastT = 0f; }
 
         public void ResetHud()
         {
@@ -85,6 +88,12 @@ namespace MoonlitParry
             if (centerText != null) centerT += dt;
             if (death) deathT += dt;
             bannerT += dt;
+            toastT += dt;
+            if (DesktopShortcut.Notice != null && GameManager.I != null && GameManager.I.State == GameManager.Flow.Playing)
+            {
+                Toast(DesktopShortcut.Notice);
+                DesktopShortcut.Notice = null;
+            }
             if (end) endT += dt;
         }
 
@@ -305,14 +314,25 @@ namespace MoonlitParry
                 Text(new Rect(0, Screen.height * 0.26f, Screen.width, 26 * s), bannerText, st, new Color(bannerCol.r, bannerCol.g, bannerCol.b, a), s);
             }
 
+            // ---- toast (bottom right)
+            if (toastText != null && toastT < 6f)
+            {
+                float a = Mathf.Clamp01(Mathf.Min(toastT / 0.3f, (6f - toastT) / 0.8f));
+                float w = Mathf.Min(Screen.width - 16 * s, (toastText.Length * 3.6f + 14) * s), h = 12 * s;
+                float tx = Screen.width - w - 8 * s, ty = Screen.height - h - 8 * s;
+                Box(tx - s, ty - s, w + 2 * s, h + 2 * s, new Color(0.8f, 0.68f, 0.42f, 0.8f * a));
+                Box(tx, ty, w, h, new Color(0.06f, 0.05f, 0.1f, 0.88f * a));
+                Text(new Rect(tx, ty, w, h), toastText, center, new Color(0.96f, 0.94f, 1f, a), s);
+            }
+
             // ---- pause menu: resume, volume, tuning, bonfire, quit
             if (gm.Paused) PauseMenu(gm, s);
 
             // ---- fade to black
             if (FadeAlpha > 0.001f) Box(0, 0, Screen.width, Screen.height, new Color(0f, 0f, 0f, FadeAlpha));
 
-            // ---- which map is loaded (first seconds, so editing problems are obvious)
-            if (Time.realtimeSinceStartup - shownSince < 9f && !string.IsNullOrEmpty(GameManager.LayoutInfo))
+            // ---- which map is loaded (first seconds in the editor, so editing problems are obvious)
+            if (Application.isEditor && Time.realtimeSinceStartup - shownSince < 9f && !string.IsNullOrEmpty(GameManager.LayoutInfo))
             {
                 var ls = new GUIStyle(GUI.skin.label) { fontSize = Mathf.Max(11, 4 * s) };
                 Ink(ls, GameManager.LayoutInfo.Contains("MẶC ĐỊNH") ? new Color(1f, 0.6f, 0.4f) : new Color(0.6f, 1f, 0.7f));
