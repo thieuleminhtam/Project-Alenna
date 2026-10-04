@@ -4,8 +4,10 @@ using UnityEngine;
 namespace MoonlitParry
 {
     /// <summary>
-    /// White-haired swordswoman. Hearts + stamina, 3-hit combo (rising slash → heavy down slash → thrust),
-    /// hovering air slashes, sword-raise parry, roll, flask, finisher on collapsed enemies, bonfire rest.
+    /// White-haired swordswoman. Hearts + stamina, 3-hit combo (cut → heavy down slash → thrust), a 3-hit hovering air
+    /// combo with its own animations, jump / apex / fall / land poses, sword-raise parry, roll, flask, finisher on
+    /// collapsed enemies, and resting on a park bench (sits until the player moves).
+    /// Frame indices below refer to player5.py's clips (in-between frames included; timing.txt keeps key timing).
     /// </summary>
     public class PlayerController : MonoBehaviour
     {
@@ -23,6 +25,7 @@ namespace MoonlitParry
         public const float RollCooldown = 0.45f;
         public const float StaminaRegen = 15f, StaminaRegenDelay = 1.2f;   // stamina is only spent by blocking
         public const float BrokenTime = 2f;
+        public const float FinisherGrace = 1.6f;   // untouchable this long after a finisher ends (and during it)
 
         public int MaxHearts = 3, Hearts;
         public int MaxFlasks = 2, Flasks;
@@ -44,26 +47,38 @@ namespace MoonlitParry
         {
             public string clip, sfx;
             public float fps, stDmg, lunge, knock, shake;
-            public int dmg, activeFrom, activeTo, chainFrom, lungeFrame;
+            public int dmg, activeFrom, activeTo, chainFrom, lungeFrame, queueFrom;
             public Vector2 off, size;
         }
 
-        static AttackDef A(string clip, float fps, int dmg, float stDmg, Vector2 off, Vector2 size, int a0, int a1, int chain, int lf, float lunge, float knock, float shake, string sfx)
+        static AttackDef A(string clip, float fps, int dmg, float stDmg, Vector2 off, Vector2 size, int a0, int a1, int chain, int q, int lf, float lunge, float knock, float shake, string sfx)
         {
             return new AttackDef
             {
                 clip = clip, fps = fps, dmg = dmg, stDmg = stDmg, off = off, size = size, activeFrom = a0, activeTo = a1,
-                chainFrom = chain, lungeFrame = lf, lunge = lunge, knock = knock, shake = shake, sfx = sfx
+                chainFrom = chain, queueFrom = q, lungeFrame = lf, lunge = lunge, knock = knock, shake = shake, sfx = sfx
             };
         }
 
-        // damage is low on purpose — the real damage comes from breaking stamina and finishing (30% max HP)
+        // damage is low on purpose — the real damage comes from breaking stamina and finishing (30% max HP).
+        // Longer katana (v5): every box reaches ~0.4 u further than before.
         static readonly AttackDef[] Attacks =
         {
-            A("attack1", 20f, 6, 16f, new Vector2(1.3f, 1.05f), new Vector2(2.8f, 1.7f), 2, 3, 4, 1, 4.6f, 2.0f, 0.05f, "slash1"),   // horizontal cut
-            A("attack2", 18f, 8, 22f, new Vector2(1.35f, 1.1f), new Vector2(2.5f, 2.4f), 3, 4, 5, 2, 4.5f, 3.0f, 0.10f, "slash2"),
-            A("attack3", 18f, 10, 28f, new Vector2(1.9f, 1.05f), new Vector2(3.0f, 0.9f), 2, 4, 99, 2, 5.5f, 5.0f, 0.10f, "slash3"),
+            A("attack1", 20f, 6, 16f, new Vector2(1.5f, 1.05f), new Vector2(3.2f, 1.7f), 3, 5, 6, 2, 2, 4.6f, 2.0f, 0.05f, "slash1"),   // horizontal cut
+            A("attack2", 18f, 8, 22f, new Vector2(1.55f, 1.1f), new Vector2(2.9f, 2.5f), 4, 6, 7, 3, 3, 4.5f, 3.0f, 0.10f, "slash2"),
+            A("attack3", 18f, 10, 28f, new Vector2(2.15f, 1.05f), new Vector2(3.5f, 0.9f), 3, 6, 99, 99, 3, 5.5f, 5.0f, 0.10f, "slash3"),
         };
+
+        // air combo (hovering): cut across, rising cut, plunging chop that reaches under the feet
+        static readonly AttackDef[] AirAttacks =
+        {
+            A("air1", 20f, 6, 16f, new Vector2(1.5f, 1.05f), new Vector2(3.2f, 1.8f), 3, 5, 6, 2, 99, 0f, 2.0f, 0.05f, "slash1"),
+            A("air2", 18f, 8, 22f, new Vector2(1.4f, 1.6f), new Vector2(2.8f, 2.9f), 3, 4, 5, 2, 99, 0f, 3.0f, 0.10f, "slash2"),
+            A("air3", 18f, 10, 28f, new Vector2(1.3f, 0.4f), new Vector2(3.1f, 2.8f), 3, 6, 99, 99, 99, 0f, 5.0f, 0.10f, "slash3"),
+        };
+
+        bool airSet;                     // the current combo started in the air (uses the air clips)
+        AttackDef Cur(int i) { return airSet ? AirAttacks[i] : Attacks[i]; }
 
         Rigidbody2D rb;
         CapsuleCollider2D col;
@@ -132,7 +147,7 @@ namespace MoonlitParry
             if (anim is RigAnim) trail = SwordTrail.Create(anim.Bone("sword"), new Vector2(0.22f, 0f), new Vector2(0.99f, 0.04f), Order.Player + 2);
 
             if (mode == SpawnMode.Wake) { state = State.Wake; anim.Play("wake", 5f, false, true); }
-            else if (mode == SpawnMode.FromRest) { state = State.Rest; restWakeFor = 1.1f; anim.Play("rest", 2f, true, true); }
+            else if (mode == SpawnMode.FromRest) { state = State.Rest; restWakeFor = 0f; anim.Play("sitidle", 5f, true, true); }
             else { state = State.Normal; anim.Play("idle", 7f, true, true); }
         }
 
@@ -194,6 +209,7 @@ namespace MoonlitParry
                 coyote = 0.1f;
                 airAttackUsed = false;
                 if (!wasGrounded && prevVy < -7f) { Fx.Dust(transform.position); Sfx.Play("land", 0.5f); }
+                if (!wasGrounded && prevVy < -5f && state == State.Normal) anim.Play("land", 20f, false, true);
             }
             else coyote -= dt;
             wasGrounded = grounded;
@@ -236,7 +252,16 @@ namespace MoonlitParry
                 case State.Finisher: UpdateFinisher(); break;
                 case State.Rest:
                     hs = 0f;
-                    if (restWakeFor > 0f && stateTime >= restWakeFor) { restWakeFor = 0f; ToNormal(); }
+                    if (anim.Name == "standup") { if (anim.Finished) ToNormal(); break; }
+                    if (anim.Name == "sit" && anim.Finished) anim.Play("sitidle", 5f, true, true);
+                    if (restWakeFor > 0f && stateTime >= restWakeFor) { restWakeFor = 0f; ToNormal(); break; }
+                    // seated on the bench until the player moves (or jumps / attacks / rolls)
+                    if (inputOn && anim.Name == "sitidle" && (Mathf.Abs(input) > 0.01f || Peek(bJump) || Peek(bAttack) || Peek(bRoll)))
+                    {
+                        bJump = bAttack = bRoll = -9f;
+                        if (input != 0f) Facing = input > 0 ? 1 : -1;
+                        anim.Play("standup", 14f, false, true);
+                    }
                     break;
                 case State.Dead:
                     hs = Mathf.MoveTowards(hs, 0f, 20f * dt);
@@ -303,7 +328,7 @@ namespace MoonlitParry
             if (trail != null)
             {
                 // the blade leaves a white crescent while a slash is live
-                bool slashing = (state == State.Attack && anim.Frame >= Attacks[combo].activeFrom - 1 && anim.Frame <= Attacks[combo].activeTo)
+                bool slashing = (state == State.Attack && anim.Frame >= Cur(combo).activeFrom - 1 && anim.Frame <= Cur(combo).activeTo)
                                 || (state == State.ParryCounter && anim.Frame >= 1 && anim.Frame <= 3)
                                 || (state == State.Finisher && anim.Frame >= 1 && anim.Frame <= 3);
                 trail.Emit(slashing);
@@ -364,10 +389,13 @@ namespace MoonlitParry
 
             if (grounded)
             {
+                bool landing = anim.Name == "land" && !anim.Finished;
                 if (Mathf.Abs(hs) > 0.3f && input != 0f) anim.Play("run", 14f, true);
-                else anim.Play("idle", 7f, true);
+                else if (!landing) anim.Play("idle", 7f, true);
             }
-            else anim.Play(v.y > 0.5f ? "jump" : "fall", 8f, true);
+            else if (v.y > 0.5f) anim.Play("jump", 14f, false);                    // take-off, holds the rising pose
+            else if (anim.Name == "apex") { if (anim.Finished) anim.Play("fall", 10f, true, true); }
+            else if (anim.Name != "fall") anim.Play("apex", 12f, false, true);      // over the top, then the falling loop
         }
 
         void StartAttack(int index)
@@ -380,9 +408,10 @@ namespace MoonlitParry
             lungeDone = false;
             hitSet.Clear();
             if (!grounded) airAttackUsed = true;
+            if (index == 0) airSet = !grounded;
             float input = GameInput.MoveX;
             if (input != 0f && (GameManager.I == null || GameManager.I.InputEnabled)) Facing = input > 0 ? 1 : -1;
-            var d = Attacks[index];
+            var d = Cur(index);
             anim.Play(d.clip, d.fps, false, true);
             Sfx.Play(d.sfx, 0.7f);
             if (grounded) hs *= 0.3f;
@@ -394,7 +423,7 @@ namespace MoonlitParry
         /// <returns>true while hovering (air attack)</returns>
         bool UpdateAttack(float dt, float input, ref Vector2 v)
         {
-            var d = Attacks[combo];
+            var d = Cur(combo);
             int f = anim.Frame;
             bool grounded = motor.Grounded;
             bool hover = false;
@@ -430,7 +459,7 @@ namespace MoonlitParry
             if (f >= d.activeFrom && f <= d.activeTo) DoHitbox(d);
 
             // queue the next hit only for a NEW press (made after this swing began) — one click = one hit
-            if (f >= d.chainFrom - 3 && Peek(bAttack) && bAttack > attackStartedAt + 0.06f) { queued = true; bAttack = -9f; }
+            if (f >= d.queueFrom && Peek(bAttack) && bAttack > attackStartedAt + 0.06f) { queued = true; bAttack = -9f; }
             const int maxCombo = 2;
             if (queued && f >= d.chainFrom && combo < maxCombo)
             {
@@ -484,7 +513,8 @@ namespace MoonlitParry
             hs = Mathf.MoveTowards(hs, 0f, 40f * dt);
             if (!motor.Grounded && v.y < -4f) v.y = -4f;
             float t = stateTime;
-            int f = t < 0.03f ? 0 : t < 0.06f ? 1 : t < 0.12f ? 2 : t < GuardEnd ? 3 : t < 0.36f ? 4 : 5;
+            int f = t < 0.03f ? 0 : t < 0.06f ? 1 : t < 0.12f ? 2 : t < GuardEnd ? 3
+                  : 4 + Mathf.Min(4, Mathf.FloorToInt((t - GuardEnd) / Mathf.Max(0.01f, ParryEnd - GuardEnd) * 5f));
             anim.SetFrame(f);
             if (Time.time >= parryReadyAt && Consume(ref bParry, 0.1f)) { StartParry(); return; }
             if (t >= ParryEnd) ToNormal();
@@ -560,7 +590,7 @@ namespace MoonlitParry
         void UpdateHeal(float dt)
         {
             hs = Mathf.MoveTowards(hs, 0f, 40f * dt);
-            if (!healApplied && anim.Frame >= 3)
+            if (!healApplied && anim.Frame >= 6)
             {
                 healApplied = true;
                 Flasks--;
@@ -593,6 +623,7 @@ namespace MoonlitParry
             transform.position = new Vector3(x, transform.position.y, 0f);
             e.BeginFinisher();
             finisherTarget = e;
+            invulnUntil = Mathf.Max(invulnUntil, Time.time + 3f);         // covers the whole finisher even if slowed
             finisherApplied = false;
             lastFinisherFrame = -1;
             state = State.Finisher;
@@ -610,8 +641,8 @@ namespace MoonlitParry
         }
 
         /// <summary>
-        /// Finisher timeline (16 keys @ 15 fps): 0 coil, 1-3 lightning cuts (nothing shows yet), 4 blood-flick,
-        /// 5-10 slow sheathe, 11 CLICK -> every cut appears at once on the target (FX + damage), 12-13 hold, 14-15 draw again.
+        /// Finisher timeline (21 frames, 16 key slots @ 15 fps): 0 coil, 1-3 lightning cuts (nothing shows yet), 5 blood-flick,
+        /// 7-12 slow sheathe, 13 CLICK -> every cut appears at once on the target (FX + damage), 14-16 hold, 17-20 relax.
         /// </summary>
         void UpdateFinisher()
         {
@@ -621,8 +652,8 @@ namespace MoonlitParry
             {
                 lastFinisherFrame = f;
                 if (f >= 1 && f <= 3) Sfx.Play("slash" + f, 0.5f, 0.1f);
-                if (f == 6) Sfx.Play("sheath", 0.3f, 0f);
-                if (f >= 11 && !finisherApplied)
+                if (f == 8) Sfx.Play("sheath", 0.3f, 0f);
+                if (f >= 13 && !finisherApplied)
                 {
                     finisherApplied = true;
                     Sfx.Play("sheath", 1f, 0f);
@@ -637,6 +668,7 @@ namespace MoonlitParry
             {
                 if (!finisherApplied && finisherTarget != null) finisherTarget.ApplyFinisher();
                 finisherTarget = null;
+                invulnUntil = Mathf.Max(invulnUntil, Time.time + FinisherGrace);
                 if (CameraFollow.I != null) CameraFollow.I.Focus(null);
                 ToNormal();
             }
@@ -671,14 +703,19 @@ namespace MoonlitParry
         /// <summary>Keep lying on the ground (opening text) until released.</summary>
         public void HoldWake(bool hold) { holdWake = hold; }
 
-        /// <summary>Sit down at a bonfire (GameManager handles the fade + respawn).</summary>
-        public void BeginRest()
+        /// <summary>Sit down on the bench at <paramref name="seat"/> (GameManager handles the fade + respawn).</summary>
+        public void BeginRest(Vector3 seat)
         {
             state = State.Rest;
             stateTime = 0f;
             restWakeFor = 0f;
             hs = 0f;
-            anim.Play("rest", 2f, true, true);
+            Facing = 1;
+            var p = new Vector2(seat.x, rb.position.y);
+            rb.position = p;
+            transform.position = new Vector3(p.x, p.y, 0f);
+            rb.SetVel(Vector2.zero);
+            anim.Play("sit", 12f, false, true);
         }
 
         void ToNormal()

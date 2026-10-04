@@ -142,7 +142,7 @@ namespace MoonlitParry
             var d = lay.Read();
             int decor = d.trees.Count + d.rocks.Count + d.bushes.Count + d.ruinWalls.Count + d.ruinPillars.Count + d.ferns.Count + d.shrooms.Count;
             LayoutInfo = "Bản đồ: LevelLayout của bạn — " + (d.zombies.Count + (float.IsNaN(d.firstZombie) ? 0 : 1)) + " quái, " +
-                         d.bonfires.Count + " lửa trại, " + d.platforms.Count + " bục, " + decor + " đồ trang trí";
+                         d.bonfires.Count + " ghế nghỉ, " + d.platforms.Count + " bục, " + decor + " đồ trang trí";
             Debug.Log("[Moonlit Parry] " + LayoutInfo);
             lay.gameObject.SetActive(false);   // hide the editor previews while playing
             return d;
@@ -173,7 +173,8 @@ namespace MoonlitParry
             if (Progress.Checkpoint >= Level.bonfireX.Count) Progress.Checkpoint = -1;
             Vector3 spawn = Progress.Checkpoint < 0
                 ? Level.spawn
-                : new Vector3(Level.bonfireX[Progress.Checkpoint] + 1.3f, LevelBuilder.StandAt(Level.bonfireX[Progress.Checkpoint] + 1.3f, Level.bonfireY[Progress.Checkpoint]) + 0.02f, 0f);
+                : new Vector3(Level.bonfireX[Progress.Checkpoint] + Bonfire.SeatDX,
+                              LevelBuilder.StandAt(Level.bonfireX[Progress.Checkpoint] + Bonfire.SeatDX, Level.bonfireY[Progress.Checkpoint]) + 0.02f, 0f);   // seated on the bench
             Player = new GameObject("Player").AddComponent<PlayerController>();
             Player.transform.SetParent(WorldRoot, false);
             Player.Init(spawn, mode);
@@ -305,7 +306,7 @@ namespace MoonlitParry
         IEnumerator Rest(Bonfire b)
         {
             State = Flow.Resting;
-            Player.BeginRest();
+            Player.BeginRest(b.SeatPos);
             if (!b.Lit)
             {
                 b.SetLit(true, true);
@@ -391,7 +392,7 @@ namespace MoonlitParry
         {
             if (Level == null || Player == null) return null;
             foreach (var b in Level.bonfires)
-                if (b != null && Mathf.Abs(b.transform.position.x - Player.transform.position.x) < 1.8f &&
+                if (b != null && Mathf.Abs(b.SeatPos.x - Player.transform.position.x) < 2.1f &&      // anywhere in front of the bench
                     Mathf.Abs(b.transform.position.y - Player.transform.position.y) < 1.5f) return b;
             return null;
         }
@@ -415,6 +416,28 @@ namespace MoonlitParry
                 Player.Teleport(new Vector3(wx, LevelBuilder.SurfaceAt(wx) + 0.05f, 0f));
                 follow.Snap();
             }
+
+#if UNITY_EDITOR
+            // editor test shortcut (F3): hop to the next bench to the right (wraps to the first one)
+            if (GameInput.BenchWarpDown && Player != null && Level != null && State == Flow.Playing && !BossActive)
+            {
+                Bonfire next = null, first = null;
+                float px = Player.transform.position.x;
+                foreach (var nb in Level.bonfires)
+                {
+                    if (nb == null) continue;
+                    if (first == null || nb.SeatPos.x < first.SeatPos.x) first = nb;
+                    if (nb.SeatPos.x > px + 3f && (next == null || nb.SeatPos.x < next.SeatPos.x)) next = nb;
+                }
+                if (next == null) next = first;
+                if (next != null)
+                {
+                    float wx = next.SeatPos.x + 1.2f;
+                    Player.Teleport(new Vector3(wx, LevelBuilder.SurfaceAt(wx) + 0.05f, 0f));
+                    follow.Snap();
+                }
+            }
+#endif
 
             if (State == Flow.Dead)
             {

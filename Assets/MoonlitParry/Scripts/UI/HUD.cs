@@ -229,7 +229,7 @@ namespace MoonlitParry
                         Prompt(cam, fc.transform.position + Vector3.up * (fc.Height + (fc.IsBoss ? 0.6f : 1.4f)), "F", "Kết liễu", s);
                     var b = gm.NearBonfire();
                     if (b != null && p.CanInteract && gm.State == GameManager.Flow.Playing)
-                        Prompt(cam, b.transform.position + Vector3.up * 2.4f, "R", b.Lit ? "Nghỉ ngơi" : "Thắp lửa & nghỉ", s);
+                        Prompt(cam, b.transform.position + new Vector3(Bonfire.SeatDX, 2.7f, 0f), "R", b.Lit ? "Ngồi nghỉ" : "Thắp đèn & ngồi nghỉ", s);
 
                     // ---- boss bar
                     var boss = gm.Level.boss;
@@ -440,7 +440,7 @@ namespace MoonlitParry
                 Text(new Rect(0, y, Screen.width, 9 * s), "(Máu/tim áp dụng khi hồi sinh)", center, new Color(0.65f, 0.65f, 0.75f), s);
                 y += 10 * s;
             }
-            if (Button(new Rect(x, y, w, bh), "Về lửa trại gần nhất", s)) gm.RestartFromBonfire();
+            if (Button(new Rect(x, y, w, bh), "Về ghế nghỉ gần nhất", s)) gm.RestartFromBonfire();
             y += bh + gap;
             if (Button(new Rect(x, y, w, bh), "Thoát game", s)) gm.QuitGame();
             y += bh + gap * 2;

@@ -68,7 +68,7 @@ namespace MoonlitParry.EditorTools
             var ti = (TextureImporter)assetImporter;
             ti.textureType = TextureImporterType.Sprite;
             ti.spriteImportMode = SpriteImportMode.Single;
-            ti.spritePixelsPerUnit = path.Contains(Root + "Player/") ? 24 : 16;     // the heroine is drawn at 1.5x pixel density
+            ti.spritePixelsPerUnit = path.Contains(Root + "Player/") || path.Contains(Root + "Boss/") ? 24 : 16;   // heroine + boss: 1.5x pixel density
             ti.filterMode = FilterMode.Point;
             ti.textureCompression = TextureImporterCompression.Uncompressed;
             ti.mipmapEnabled = false;
@@ -83,7 +83,13 @@ namespace MoonlitParry.EditorTools
             s.spriteExtrude = 0;
             if (path.Contains(Root + "Tiles/") || path.Contains(Root + "Under/"))
                 s.spriteAlignment = (int)SpriteAlignment.BottomLeft;
-            else if (path.Contains(Root + "Player/") || path.Contains(Root + "Zombie/") || path.Contains(Root + "Boss/") || path.Contains(Root + "Decor/"))
+            else if (path.Contains(Root + "Player/"))
+            {
+                // heroine frames (player5.py) are 192 x 132 with 24 empty rows under the feet line: pivot on that line
+                s.spriteAlignment = (int)SpriteAlignment.Custom;
+                s.spritePivot = new Vector2(0.5f, 24f / 132f);
+            }
+            else if (path.Contains(Root + "Zombie/") || path.Contains(Root + "Boss/") || path.Contains(Root + "Decor/"))
                 s.spriteAlignment = (int)SpriteAlignment.BottomCenter;
             else
                 s.spriteAlignment = (int)SpriteAlignment.Center;

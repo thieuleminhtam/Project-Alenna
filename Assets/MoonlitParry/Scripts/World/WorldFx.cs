@@ -8,11 +8,11 @@ namespace MoonlitParry
     {
         public static CameraFollow I;
         public Transform target;
-        public float minX = -1000f, maxX = 1000f, minY = 2.75f, maxY = 100f;
+        public float minX = -1000f, maxX = 1000f, minY = 4.44f, maxY = 100f;
         public const float PPU = 16f;
-        public const float BaseSize = 6.75f;
+        public const float BaseSize = 8.4375f;           // 1080p: 4 screen px per 16 px/unit art pixel (was 6.75)
         /// <summary>HD framing: the camera sits high so only the grass edge of the ground shows (no underground view).</summary>
-        public const float RestY = 4.6f, LookUp = 3.6f;
+        public const float RestY = 5.75f, LookUp = 4.5f;   // scaled with BaseSize: same ground line on screen
         Camera cam;
         Vector3 basePos, vel;
         float look, shakeAmt, shakeTime, punch;

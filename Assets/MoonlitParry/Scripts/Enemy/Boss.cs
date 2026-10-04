@@ -11,7 +11,7 @@ namespace MoonlitParry
     /// </summary>
     public class Boss : EnemyBase
     {
-        enum S { Dormant, Approach, RearUp, Charge, Upswing, Skid, SwingWindup, Swing, SlamWindup, Slam, ThrustWindup, Thrust, KickWindup, Kick, Crouch, Air, Hang, Dive, Land, Recover, Stagger, Collapsed, Getup, PhaseShift, Dead }
+        enum S { Dormant, Approach, BackHop, RearUp, Charge, Upswing, Skid, SwingWindup, Swing, SlamWindup, Slam, ThrustWindup, Thrust, KickWindup, Kick, Crouch, Air, Hang, Dive, Land, Recover, Stagger, Collapsed, Getup, PhaseShift, Dead }
         enum Move { None, Combo, Charge, Leap, Thrust, Kick }
 
         // rider's hands (glaive pivot) for each move, facing space — matched to the boss sprites
@@ -27,6 +27,10 @@ namespace MoonlitParry
         float firstHitAt, kickReadyAt;
         bool quickNext, soloThrust;
         float leapTargetX;
+        // back-hop before a charge when the player is too close for a real gallop
+        float hopTargetX, hopVx;
+        int hopPhase;
+        const float ChargeRoom = 9.5f, HopMinGain = 2.5f;
         const float LeapGravity = 5f, LeapHeight = 7.2f, DiveSpeed = 34f, HangTime = 0.1f;
 
         S st;
@@ -141,6 +145,45 @@ namespace MoonlitParry
                     }
                     break;
 
+                case S.BackHop:
+                    if (hopPhase == 0)                     // quick crouch, then spring backwards (still facing the player)
+                    {
+                        if (t >= 0.16f / sp)
+                        {
+                            hopPhase = 1;
+                            float span = Mathf.Abs(hopTargetX - transform.position.x);
+                            float dur = Mathf.Lerp(0.42f, 0.6f, Mathf.InverseLerp(HopMinGain, ChargeRoom, span)) / Mathf.Sqrt(sp);
+                            hopVx = (hopTargetX - transform.position.x) / dur;
+                            vx = hopVx;
+                            v = new Vector2(hopVx, Mathf.Abs(Physics2D.gravity.y) * 4f * dur * 0.5f);   // symmetric arc (gravity x4 in the air)
+                            motor.Launch(0.2f);
+                            anim.Play("air", 6f, true, true);
+                            Sfx.Play("snort", 0.6f, 0.06f);
+                            Fx.DustBig(transform.position, 1.0f);
+                            t = 0f;
+                        }
+                    }
+                    else if (hopPhase == 1)                // in the air, drifting back
+                    {
+                        vx = hopVx;
+                        if (t > 0.12f && motor.Grounded)
+                        {
+                            hopPhase = 2;
+                            t = 0f;
+                            vx = 0f;
+                            anim.Play("land", 5f / 0.22f, false, true);
+                            Fx.DustBig(transform.position, 1.1f);
+                            Sfx.Play("stomp", 0.55f, 0.05f);
+                            if (CameraFollow.I != null) CameraFollow.I.Shake(0.1f, 0.2f);
+                        }
+                    }
+                    else if (t >= 0.2f / sp)               // landed at a distance: rear up and charge
+                    {
+                        FaceTo(dx);
+                        StartRear(0.55f / sp);
+                    }
+                    break;
+
                 case S.RearUp:
                     if (t >= windDur) StartCharge();
                     break;
@@ -186,7 +229,7 @@ namespace MoonlitParry
                         {
                             chargesLeft--;
                             FaceTo(dx);
-                            StartRear(0.4f / sp);
+                            if (!TryBackHop()) StartRear(0.4f / sp);
                         }
                         else StartRecover(0.6f);
                     }
@@ -580,7 +623,27 @@ namespace MoonlitParry
         void BeginCharge()
         {
             chargesLeft = Phase >= 2 ? 1 : 0;
-            StartRear(0.7f / Spd);
+            if (!TryBackHop()) StartRear(0.7f / Spd);
+        }
+
+        /// <summary>
+        /// A charge needs room: when the player is closer than ChargeRoom the Warden first leaps backwards (facing the
+        /// player) to that distance, then rears up and gallops. Cornered against the arena edge it charges from where it is.
+        /// </summary>
+        bool TryBackHop()
+        {
+            var p = Player;
+            if (p == null || p.IsDead) return false;
+            float dx = p.transform.position.x - transform.position.x;
+            if (Mathf.Abs(dx) >= ChargeRoom - 0.5f) return false;
+            FaceTo(dx);
+            float target = Mathf.Clamp(p.transform.position.x - facing * ChargeRoom, arenaMin + 2.6f, arenaMax - 2.6f);
+            if ((target - transform.position.x) * -facing < HopMinGain) return false;
+            hopTargetX = target;
+            hopPhase = 0;
+            Go(S.BackHop);
+            anim.Play("crouch", Mathf.Max(1, anim.CountOf("crouch")) / 0.16f * Spd, false, true);
+            return true;
         }
 
         void StartRear(float dur)

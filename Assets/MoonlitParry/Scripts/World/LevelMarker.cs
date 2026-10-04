@@ -65,7 +65,7 @@ namespace MoonlitParry
 
         public static Vector3 PreviewOffset(MarkerKind k)
         {
-            return k == MarkerKind.Bonfire ? new Vector3(0f, 1.06f, 0f) : Vector3.zero;
+            return Vector3.zero;
         }
 
 #if UNITY_EDITOR
@@ -143,7 +143,7 @@ namespace MoonlitParry
             switch (k)
             {
                 case MarkerKind.PlayerSpawn: return "Player/idle_00";
-                case MarkerKind.Bonfire: return "FX/bonfire_00";
+                case MarkerKind.Bonfire: return "Decor/bench";
                 case MarkerKind.FirstZombie:
                 case MarkerKind.Zombie: return "Zombie/idle_00";
                 case MarkerKind.Boss: return "Boss/idle_00";

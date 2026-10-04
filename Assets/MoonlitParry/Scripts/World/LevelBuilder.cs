@@ -126,9 +126,9 @@ namespace MoonlitParry
             data.bossTriggerX = bg + 4.1f;
             data.bossArenaMax = L.bossArenaEnd;
             Gfx.Sprite("boss_arch", decor, new Vector3(bg, by - 0.06f, 0f), SpriteBank.One("Decor/boss_arch"), Order.DecorBack);
-            foreach (float off in new[] { -52f / 16f, 52f / 16f })
+            foreach (float off in new[] { -BossBrazierX, BossBrazierX })   // bowls on the gatehouse corners (decor_dark.py)
             {
-                var pos = new Vector3(bg + off + 0.06f, by + 131f / 16f + 0.55f, 0f);
+                var pos = new Vector3(bg + off, by - 0.06f + BossBrazierRim + 0.55f, 0f);
                 var fl = Gfx.Sprite("brazier", decor, pos, null, Order.DecorBack + 1);
                 fl.gameObject.AddComponent<FlameAnim>();
                 var gl = Gfx.Sprite("brazier_glow", decor, pos, Fx.Glow, Order.DecorBack);
@@ -164,6 +164,9 @@ namespace MoonlitParry
                 if (Mathf.Approximately(profile[i].x, profile[i + 1].x) && profile[i].y > profile[i + 1].y + 3f) return profile[i].x;
             return profile[0].x;
         }
+
+        /// <summary>Brazier bowls on the boss gatehouse: x offset and rim height above the sprite base (units).</summary>
+        const float BossBrazierX = 1.22f, BossBrazierRim = 9.05f;
 
         public static Zombie SpawnZombie(Transform parent, float x, bool emerge, float y = float.NaN)
         {

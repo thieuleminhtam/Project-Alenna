@@ -29,6 +29,7 @@ namespace MoonlitParry
         static readonly KeyCode[] kDebug = { KeyCode.F1 };
         static readonly KeyCode[] kWarp = { KeyCode.F2, KeyCode.Alpha0 };
         static readonly KeyCode[] kCapture = { KeyCode.F12, KeyCode.Alpha9 };
+        static readonly KeyCode[] kBench = { KeyCode.F3 };
 
 #if ENABLE_INPUT_SYSTEM
         static readonly Dictionary<KeyCode, Key> map = new Dictionary<KeyCode, Key>
@@ -38,7 +39,7 @@ namespace MoonlitParry
             { KeyCode.V, Key.V }, { KeyCode.H, Key.H }, { KeyCode.F, Key.F }, { KeyCode.Q, Key.Q }, { KeyCode.R, Key.R },
             { KeyCode.E, Key.E }, { KeyCode.P, Key.P }, { KeyCode.Space, Key.Space }, { KeyCode.LeftArrow, Key.LeftArrow },
             { KeyCode.RightArrow, Key.RightArrow }, { KeyCode.UpArrow, Key.UpArrow }, { KeyCode.DownArrow, Key.DownArrow },
-            { KeyCode.LeftShift, Key.LeftShift }, { KeyCode.Alpha1, Key.Digit1 }, { KeyCode.Keypad1, Key.Numpad1 }, { KeyCode.Return, Key.Enter }, { KeyCode.Escape, Key.Escape }, { KeyCode.F1, Key.F1 }, { KeyCode.F2, Key.F2 }, { KeyCode.Alpha0, Key.Digit0 }, { KeyCode.F12, Key.F12 }, { KeyCode.Alpha9, Key.Digit9 },
+            { KeyCode.LeftShift, Key.LeftShift }, { KeyCode.Alpha1, Key.Digit1 }, { KeyCode.Keypad1, Key.Numpad1 }, { KeyCode.Return, Key.Enter }, { KeyCode.Escape, Key.Escape }, { KeyCode.F1, Key.F1 }, { KeyCode.F2, Key.F2 }, { KeyCode.Alpha0, Key.Digit0 }, { KeyCode.F12, Key.F12 }, { KeyCode.Alpha9, Key.Digit9 }, { KeyCode.F3, Key.F3 },
         };
 
         static bool NewHeld(KeyCode[] keys)
@@ -225,6 +226,7 @@ namespace MoonlitParry
         public static bool PauseDown { get { return Down(kPause); } }
         public static bool DebugDown { get { return Down(kDebug); } }
         public static bool WarpDown { get { return Down(kWarp); } }
+        public static bool BenchWarpDown { get { return Down(kBench); } }
         public static bool CaptureDown { get { return Down(kCapture); } }
     }
 

@@ -216,7 +216,6 @@ namespace MoonlitParry
         /// </summary>
         public static bool HDAllowed(string path)
         {
-            if (path == "Decor/bonfire_unlit") return false;          // the bonfire shrine is pixel art (like the characters)
             if (path.StartsWith("BG/") || path.StartsWith("Decor/") || path.StartsWith("Tiles/") || path.StartsWith("Terrain/")) return true;
             if (path.StartsWith("FX/"))
             {
@@ -257,6 +256,38 @@ namespace MoonlitParry
             w = UnityEngine.Sprite.Create(t, new Rect(0, 0, wd, ht), new Vector2(s.pivot.x / wd, s.pivot.y / ht), s.pixelsPerUnit, 0, SpriteMeshType.FullRect);
             whites[s] = w;
             return w;
+        }
+
+        static readonly Dictionary<string, Dictionary<string, float[]>> timings = new Dictionary<string, Dictionary<string, float[]>>();
+
+        /// <summary>
+        /// Per-frame durations from Resources/Sprites/&lt;folder&gt;/timing.txt ("clip:w0,w1,..." per line, in units of
+        /// the clip's nominal frame time). In-between frames share the time slot of the key pose they follow, so the
+        /// gameplay timing of the key poses does not change when frames are added. Clips not listed play evenly.
+        /// </summary>
+        public static Dictionary<string, float[]> Timing(string folder)
+        {
+            Dictionary<string, float[]> d;
+            if (timings.TryGetValue(folder, out d)) return d;
+            d = new Dictionary<string, float[]>();
+            var ta = Resources.Load<TextAsset>("Sprites/" + folder + "/timing");
+            if (ta != null)
+            {
+                foreach (var raw in ta.text.Split('\n'))
+                {
+                    var line = raw.Trim();
+                    int c = line.IndexOf(':');
+                    if (c <= 0) continue;
+                    var parts = line.Substring(c + 1).Split(',');
+                    var w = new float[parts.Length];
+                    bool ok = true;
+                    for (int i = 0; i < parts.Length; i++)
+                        ok &= float.TryParse(parts[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out w[i]);
+                    if (ok) d[line.Substring(0, c)] = w;
+                }
+            }
+            timings[folder] = d;
+            return d;
         }
 
         public static void Prewarm(Dictionary<string, Sprite[]> set)
@@ -300,7 +331,7 @@ namespace MoonlitParry
             var sr = Gfx.Renderer(visual.gameObject, null, order);
             var set = SpriteBank.Set(folder);
             SpriteBank.Prewarm(set);
-            return new SpriteAnim(sr, set);
+            return new SpriteAnim(sr, set, SpriteBank.Timing(folder));
         }
     }
 
@@ -309,7 +340,9 @@ namespace MoonlitParry
     {
         readonly SpriteRenderer sr;
         readonly Dictionary<string, Sprite[]> set;
+        readonly Dictionary<string, float[]> timing;
         Sprite[] frames;
+        float[] weights;
         float fps, t;
         bool loop;
 
@@ -318,11 +351,14 @@ namespace MoonlitParry
         public bool Finished { get; private set; }
         public int Length { get { return frames == null ? 0 : frames.Length; } }
 
-        public SpriteAnim(SpriteRenderer sr, Dictionary<string, Sprite[]> set)
+        public SpriteAnim(SpriteRenderer sr, Dictionary<string, Sprite[]> set, Dictionary<string, float[]> timing = null)
         {
             this.sr = sr;
             this.set = set;
+            this.timing = timing;
         }
+
+        float Dur(int f) { return weights != null && f < weights.Length && weights[f] > 0.001f ? weights[f] : 1f; }
 
         public bool Has(string clip) { return set.ContainsKey(clip); }
 
@@ -347,6 +383,8 @@ namespace MoonlitParry
                 return;
             }
             frames = f;
+            float[] w;
+            weights = timing != null && timing.TryGetValue(clip, out w) && w.Length == f.Length ? w : null;
             Name = clip;
             this.fps = fps;
             this.loop = loop;
@@ -367,9 +405,9 @@ namespace MoonlitParry
         {
             if (frames == null || Finished) return;
             t += dt * fps;
-            while (t >= 1f)
+            while (t >= Dur(Frame))
             {
-                t -= 1f;
+                t -= Dur(Frame);
                 if (Frame + 1 >= frames.Length)
                 {
                     if (loop) Frame = 0;

@@ -2,38 +2,38 @@ using UnityEngine;
 
 namespace MoonlitParry
 {
-    /// <summary>Bonfire: rest (R) to refill hearts/flasks and set the checkpoint. Enemies respawn.</summary>
+    /// <summary>
+    /// Rest point: a black cast-iron park bench with a tall park lamp beside it (European park style, HD art from
+    /// decor_park.py). R = sit down and rest: hearts and flasks refill, the checkpoint is set, enemies respawn; the lamp
+    /// lights up white the first time. The heroine stays seated until the player moves. (Kept the class name Bonfire.)
+    /// </summary>
     public class Bonfire : MonoBehaviour
     {
-        /// <summary>Bonfires sit on the very top layer (above grass and the dark foreground strip) so they are never hidden.</summary>
-        public const int Front = Order.Foreground + 2;
+        public const float SeatDX = -0.75f;                    // where the heroine sits, from the bench centre
+        public const float LampDX = 2.25f, LampLightY = 3.49f;   // lamp position and lantern height (decor_park.py)
 
         public int Id;
         public bool Lit { get; private set; }
-        SpriteRenderer fire, unlit, glow;
-        SpriteAnim anim;
-        AudioSource loop;
-        float seed;
+        public Vector3 SeatPos { get { return transform.position + new Vector3(SeatDX, 0f, 0f); } }
+        SpriteRenderer lampOff, lampOn, halo, pool;
+        float seed, flickerUntil;
 
         public static Bonfire Create(Transform parent, Vector3 basePos, int id, bool lit)
         {
-            var go = new GameObject("Bonfire_" + id);
+            var go = new GameObject("Bench_" + id);
             go.transform.SetParent(parent, false);
             go.transform.position = basePos;
             var b = go.AddComponent<Bonfire>();
             b.Id = id;
             b.seed = Random.value * 10f;
-            b.unlit = Gfx.Sprite("unlit", go.transform, basePos, SpriteBank.One("Decor/bonfire_unlit"), Bonfire.Front);
-            // the flame frames are centre-pivoted and include the shrine: lift them by half their height
-            var fx = SpriteBank.Set("FX");
-            Sprite[] bf;
-            float half = fx.TryGetValue("bonfire", out bf) && bf.Length > 0 && bf[0] != null ? bf[0].bounds.extents.y : 1.06f;
-            b.fire = Gfx.Sprite("fire", go.transform, basePos + new Vector3(0f, half, 0f), null, Bonfire.Front);
-            b.anim = new SpriteAnim(b.fire, fx);
-            b.anim.Play("bonfire", 10f, true, true);
-            b.glow = Gfx.Sprite("glow", go.transform, basePos + new Vector3(0f, 0.9f, 0f), Fx.Glow, Bonfire.Front - 1);
-            b.glow.transform.localScale = new Vector3(5f, 4f, 1f);
-            b.loop = Sfx.Loop(go, "fire_loop");
+            Gfx.Sprite("bench", go.transform, basePos + new Vector3(0f, -0.04f, 0f), SpriteBank.One("Decor/bench"), Order.Decor + 1);
+            var lp = basePos + new Vector3(LampDX, -0.04f, 0f);
+            b.lampOff = Gfx.Sprite("lamp", go.transform, lp, SpriteBank.One("Decor/parklamp"), Order.Decor + 1);
+            b.lampOn = Gfx.Sprite("lamp_lit", go.transform, lp, SpriteBank.One("Decor/parklamp_lit"), Order.Decor + 1);
+            b.halo = Gfx.Sprite("halo", go.transform, lp + new Vector3(0f, LampLightY, 0f), Fx.Glow, Order.Decor);
+            b.halo.transform.localScale = new Vector3(3.4f, 3.4f, 1f);
+            b.pool = Gfx.Sprite("pool", go.transform, basePos + new Vector3(LampDX * 0.55f, 0.05f, 0f), Fx.Glow, Order.Decor);
+            b.pool.transform.localScale = new Vector3(4.2f, 0.7f, 1f);
             b.SetLit(lit, false);
             return b;
         }
@@ -41,33 +41,27 @@ namespace MoonlitParry
         public void SetLit(bool lit, bool fx)
         {
             Lit = lit;
-            fire.enabled = lit;
-            unlit.enabled = !lit;
-            glow.color = lit ? new Color(1f, 0.6f, 0.3f, 0.35f) : new Color(1f, 0.5f, 0.3f, 0.08f);
+            lampOff.enabled = !lit;
+            lampOn.enabled = lit;
+            halo.enabled = pool.enabled = lit;
             if (fx && lit)
             {
-                Fx.Rise(transform.position + Vector3.up * 0.6f, new Color(1f, 0.7f, 0.3f), 20, 0.6f, 3f);
+                flickerUntil = Time.time + 0.7f;                  // the lamp catches with a few flickers
+                Fx.Rise(transform.position + new Vector3(LampDX, LampLightY, 0f), new Color(0.9f, 0.95f, 1f), 14, 0.3f, 1.5f);
                 Sfx.Play("rest", 0.8f, 0f);
             }
         }
 
         void Update()
         {
-            float dt = Time.deltaTime;
-            if (Lit) anim.Tick(dt);
-            if (Lit && Random.value < 0.08f)
-                FxAnim.Particle(Fx.EmberSprite, transform.position + new Vector3(Random.Range(-0.3f, 0.3f), 1.2f, 0f),
-                    new Vector2(Random.Range(-0.3f, 0.3f), Random.Range(1f, 2f)), Random.Range(0.6f, 1.2f), new Color(1f, 0.6f, 0.2f), -0.5f, Fx.EmberScale, Bonfire.Front + 1);
-            var c = glow.color;
-            float baseA = Lit ? 0.35f : 0.08f;
-            c.a = baseA + (Lit ? 0.06f : 0.02f) * (Mathf.PerlinNoise(Time.time * 6f, seed) - 0.5f) * 2f;
-            glow.color = c;
-            var p = GameManager.I != null ? GameManager.I.Player : null;
-            if (loop != null)
-            {
-                float d = p != null ? Mathf.Abs(p.transform.position.x - transform.position.x) : 99f;
-                loop.volume = Lit ? Mathf.Clamp01(1f - (d - 2f) / 10f) * 0.45f * Sfx.UserSfx : 0f;
-            }
+            if (!Lit) return;
+            float a = 0.32f + 0.04f * (Mathf.PerlinNoise(Time.time * 1.3f, seed) - 0.5f);
+            bool on = true;
+            if (Time.time < flickerUntil) on = Mathf.PerlinNoise(Time.time * 30f, seed) > 0.45f;
+            lampOn.enabled = on;
+            lampOff.enabled = !on;
+            halo.color = new Color(0.92f, 0.95f, 1f, on ? a : 0.04f);
+            pool.color = new Color(0.9f, 0.93f, 1f, on ? a * 0.55f : 0.02f);
         }
     }
 
